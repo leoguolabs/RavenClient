@@ -1,30 +1,37 @@
+import { NATIVE_TERMINAL_ENABLED } from '@renderer/config/terminalFlags'
 import { TerminalSquare } from 'lucide-react'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Navigate } from 'react-router-dom'
 import styled from 'styled-components'
 
+import { TerminalWorkbench } from './TerminalWorkbench'
+
 /**
  * Route element for /terminal.
  *
- * §6.2 – route guard: redirects to / if Chaterm assets are unavailable.
- *
- * The actual <webview> lives in ChatermWebviewHost (mounted outside the Routes
- * tree) so SSH sessions survive route changes (§6.4). This component just
- * provides the route match and shows a "not available" message when needed.
+ * With NATIVE_TERMINAL_ENABLED the tab renders Raven's own terminal
+ * (xterm.js + node-pty + ssh2, see docs/technical/native-terminal-design.md).
+ * Otherwise it falls back to the legacy embedded-Chaterm guard, where the
+ * <webview> lives in ChatermWebviewHost (mounted outside the Routes tree).
  */
 const TerminalPage: FC = () => {
   const { t } = useTranslation()
   const [status, setStatus] = useState<{ hasAssets: boolean } | null>(null)
 
   useEffect(() => {
+    if (NATIVE_TERMINAL_ENABLED) return
     window.api.chaterm
       .getStatus()
       .then((s) => setStatus(s))
       .catch(() => setStatus({ hasAssets: false }))
   }, [])
 
-  // Still fetching status — render nothing; ChatermWebviewHost shows the loading overlay
+  if (NATIVE_TERMINAL_ENABLED) {
+    return <TerminalWorkbench />
+  }
+
+  // Legacy Chaterm path — still fetching status, render nothing.
   if (status === null) return null
 
   // §6.2: route guard — redirect if Chaterm resources not found
@@ -39,7 +46,6 @@ const TerminalPage: FC = () => {
   }
 
   // Chaterm assets exist — ChatermWebviewHost handles the webview rendering.
-  // Render nothing so the host fills the space via position:fixed.
   return null
 }
 

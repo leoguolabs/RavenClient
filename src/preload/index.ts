@@ -9,6 +9,8 @@ import { UpgradeChannel } from '@shared/config/constant'
 import type { LogLevel, LogSourceWithContext } from '@shared/config/logger'
 import { IpcChannel } from '@shared/IpcChannel'
 import { HTTPUploadEventPayload } from '@shared/PackageUploadEvent'
+import { TerminalHistoryEntry, TerminalSessionConfig, TerminalSessionInfo } from '@shared/terminal'
+import { dataChannelFor, exitChannelFor, statusChannelFor } from '@shared/terminal'
 import {
   AddMemoryOptions,
   AssistantMessage,
@@ -493,6 +495,40 @@ const api = {
       const listener = (_event: Electron.IpcRendererEvent, path: string) => callback(path)
       ipcRenderer.on(IpcChannel.Raven_UI_Navigate, listener)
       return () => ipcRenderer.removeListener(IpcChannel.Raven_UI_Navigate, listener)
+    }
+  },
+  terminal: {
+    createSession: (config: TerminalSessionConfig): Promise<TerminalSessionInfo> =>
+      ipcRenderer.invoke(IpcChannel.Terminal_CreateSession, config),
+    write: (sessionId: string, data: string): Promise<void> =>
+      ipcRenderer.invoke(IpcChannel.Terminal_Write, sessionId, data),
+    resize: (sessionId: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke(IpcChannel.Terminal_Resize, sessionId, cols, rows),
+    closeSession: (sessionId: string): Promise<void> => ipcRenderer.invoke(IpcChannel.Terminal_CloseSession, sessionId),
+    onData: (sessionId: string, callback: (chunk: Uint8Array) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, chunk: Uint8Array) => callback(chunk)
+      ipcRenderer.on(dataChannelFor(sessionId), listener)
+      return () => ipcRenderer.removeListener(dataChannelFor(sessionId), listener)
+    },
+    onExit: (sessionId: string, callback: (exitCode: number) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, exitCode: number) => callback(exitCode)
+      ipcRenderer.on(exitChannelFor(sessionId), listener)
+      return () => ipcRenderer.removeListener(exitChannelFor(sessionId), listener)
+    },
+    onStatus: (sessionId: string, callback: (info: TerminalSessionInfo) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, info: TerminalSessionInfo) => callback(info)
+      ipcRenderer.on(statusChannelFor(sessionId), listener)
+      return () => ipcRenderer.removeListener(statusChannelFor(sessionId), listener)
+    },
+    history: {
+      report: (entry: {
+        script: string
+        exitCode?: number
+        cwd?: string
+        host?: string
+      }): Promise<TerminalHistoryEntry | null> => ipcRenderer.invoke(IpcChannel.Terminal_History_Report, entry),
+      list: (): Promise<TerminalHistoryEntry[]> => ipcRenderer.invoke(IpcChannel.Terminal_History_List),
+      clear: (): Promise<void> => ipcRenderer.invoke(IpcChannel.Terminal_History_Clear)
     }
   }
 }

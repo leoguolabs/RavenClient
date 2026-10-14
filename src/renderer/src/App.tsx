@@ -21,6 +21,7 @@ import { RavenAccountProvider } from './context/RavenAccountContext'
 import StyleSheetManager from './context/StyleSheetManager'
 import { ThemeProvider } from './context/ThemeProvider'
 import NavigationHandler from './handler/NavigationHandler'
+import { CHATERM_TERMINAL_ENABLED } from './config/terminalFlags'
 import AgentsPage from './pages/agents/AgentsPage'
 import FilesPage from './pages/files/FilesPage'
 import HomePage from './pages/home/HomePage'
@@ -80,8 +81,9 @@ function App(): React.ReactElement {
                               <Route path="/terminal" element={<TerminalPage />} />
                             </Routes>
                           </React.Suspense>
-                          {/* §6.4: Persistent webview host outside Routes keeps SSH sessions alive */}
-                          <ChatermWebviewHost />
+                          {/* §6.4: Persistent webview host outside Routes keeps SSH sessions alive.
+                              Dormant while the native terminal owns the /terminal tab. */}
+                          {CHATERM_TERMINAL_ENABLED && <ChatermWebviewHost />}
                         </HashRouter>
                       </TopViewContainer>
                     </RavenAccountGate>

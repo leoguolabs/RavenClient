@@ -33,6 +33,7 @@ import {
 } from './services/ProtocolClient'
 import { RendererBridgeProvider } from './services/raven-llm-bridge/RendererBridgeProvider'
 import { RavenLLMBridgeService } from './services/RavenLLMBridgeService'
+import { TerminalService } from './services/terminal/TerminalService'
 import selectionService, { initSelectionService } from './services/SelectionService'
 import { registerShortcuts } from './services/ShortcutService'
 import { TrayService } from './services/TrayService'
@@ -246,6 +247,7 @@ registerChatermProtocolScheme()
 const ravenLLMBridgeService = new RavenLLMBridgeService()
 let ravenRendererBridgeProvider: RendererBridgeProvider | null = null
 let chatermProcessService = new ChatermProcessService({ bridge: ravenLLMBridgeService })
+const terminalService = new TerminalService()
 
 // Check for single instance lock
 if (!app.requestSingleInstanceLock()) {
@@ -356,6 +358,14 @@ if (!app.requestSingleInstanceLock()) {
       finishChatermStartup!()
     }
 
+    // Native terminal service (xterm.js + node-pty + ssh2). Registers its own
+    // IPC handlers; see docs/technical/native-terminal-design.md.
+    try {
+      terminalService.start()
+    } catch (error) {
+      logger.error('Failed to start TerminalService:', error as Error)
+    }
+
     // §6: Chaterm renderer↔main IPC handlers (called from Raven renderer, not from the webview)
     ipcMain.handle(IpcChannel.Chaterm_AttachWebview, async (_event, webContentsId: number) => {
       const wc = webContents.fromId(webContentsId)
@@ -439,6 +449,12 @@ if (!app.requestSingleInstanceLock()) {
       ravenLLMBridgeService.destroy()
     } catch (error) {
       logger.warn('Error cleaning up Chaterm services:', error as Error)
+    }
+    // Kill PTY/SSH sessions and flush the command history store.
+    try {
+      terminalService.stop()
+    } catch (error) {
+      logger.warn('Error cleaning up TerminalService:', error as Error)
     }
     // finish the logger
     logger.finish()

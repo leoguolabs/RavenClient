@@ -342,7 +342,18 @@ export enum IpcChannel {
   // Chaterm renderer ↔ main process channels (called from Raven renderer, NOT from webview)
   Chaterm_GetStatus = 'chaterm:getStatus',
   Chaterm_AttachWebview = 'chaterm:attachWebview',
-  Chaterm_DetachWebview = 'chaterm:detachWebview'
+  Chaterm_DetachWebview = 'chaterm:detachWebview',
+
+  // Native Terminal (replaces the embedded Chaterm as the Terminal tab implementation)
+  // Data/exit/status events use dynamic channels 'terminal:data:<id>' / 'terminal:exit:<id>'
+  // / 'terminal:status:<id>' (see packages/shared/terminal.ts)
+  Terminal_CreateSession = 'terminal:createSession',
+  Terminal_Write = 'terminal:write',
+  Terminal_Resize = 'terminal:resize',
+  Terminal_CloseSession = 'terminal:closeSession',
+  Terminal_History_Report = 'terminal:history:report',
+  Terminal_History_List = 'terminal:history:list',
+  Terminal_History_Clear = 'terminal:history:clear'
 
   // NOTE: Chaterm internal channels use the 'chaterm:' prefix.
   // They are defined in ChatermProcessService, NOT enumerated here,
