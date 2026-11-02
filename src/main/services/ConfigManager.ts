@@ -1,11 +1,12 @@
+import path from 'node:path'
+
 import { defaultLanguage, UpgradeChannel, ZOOM_SHORTCUTS } from '@shared/config/constant'
 import { LanguageVarious, Shortcut, ThemeMode } from '@types'
-import crypto from 'crypto'
 import { app } from 'electron'
 import Store from 'electron-store'
-import os from 'os'
 
 import { locales } from '../utils/locales'
+import { DeviceIdentity, DeviceIdentityRecord } from './DeviceIdentity'
 
 export enum ConfigKeys {
   Language = 'language',
@@ -36,12 +37,15 @@ export enum ConfigKeys {
   RavenAIServicePort = 'ravenAIServicePort',
   RavenAIServiceAuthToken = 'ravenAIServiceAuthToken',
   DeviceLinkDeviceId = 'deviceLinkDeviceId',
-  DeviceLinkDeviceName = 'deviceLinkDeviceName'
+  DeviceLinkDeviceName = 'deviceLinkDeviceName',
+  DeviceLinkIdentityScope = 'deviceLinkIdentityScope'
 }
 
 export class ConfigManager {
   private store: Store
   private subscribers: Map<string, Array<(newValue: any) => void>> = new Map()
+  private deviceIdentity?: DeviceIdentity
+  private identity?: DeviceIdentityRecord
 
   constructor() {
     this.store = new Store()
@@ -246,7 +250,7 @@ export class ConfigManager {
     this.set(ConfigKeys.UseCustomUpdateServer, value)
   }
 
-  // Device Link: RavenAIService endpoint and device identity (defaults fall back to hostname)
+  // Device Link: RavenAIService endpoint and reinstall-safe device identity.
   getRavenAIServiceHost(): string {
     const environmentHost = process.env.RAVEN_AI_SERVICE_HOST?.trim()
     if (environmentHost) return environmentHost
@@ -286,51 +290,47 @@ export class ConfigManager {
     return `http://${host}:${port}`
   }
 
-  private defaultDeviceHostname(): string {
-    return os.hostname() || 'unknown-device'
+  private ensureDeviceLinkIdentity(): DeviceIdentityRecord {
+    if (!this.identity) {
+      // appData is the OS user root, independent of userData, portable installs and app versions.
+      this.deviceIdentity = new DeviceIdentity(path.join(app.getPath('appData'), 'RavenAI', 'device-identity'))
+      this.identity = this.deviceIdentity.resolve({
+        deviceId: this.get<string>(ConfigKeys.DeviceLinkDeviceId),
+        deviceName: this.get<string>(ConfigKeys.DeviceLinkDeviceName),
+        scope: this.get<string>(ConfigKeys.DeviceLinkIdentityScope)
+      })
+      this.mirrorDeviceLinkIdentity()
+    }
+    return this.identity
   }
 
-  private defaultDeviceIdentity(): string {
-    const hostname = this.defaultDeviceHostname()
-    const version = app?.getVersion?.() || 'unknown'
-    const suffix = crypto.randomBytes(3).toString('hex')
-    return `${hostname}-${version}-${suffix}`
-  }
-
-  private ensureDeviceLinkIdentityDefaults(): string {
-    const storedId = this.get<string>(ConfigKeys.DeviceLinkDeviceId)
-    const storedName = this.get<string>(ConfigKeys.DeviceLinkDeviceName)
-    const identity = storedId?.trim() || this.defaultDeviceIdentity()
-
-    if (!storedId || !storedId.trim()) {
-      this.set(ConfigKeys.DeviceLinkDeviceId, identity)
-    }
-
-    if (!storedName || !storedName.trim()) {
-      this.set(ConfigKeys.DeviceLinkDeviceName, identity)
-    }
-
-    return identity
+  private mirrorDeviceLinkIdentity() {
+    if (!this.identity) return
+    this.set(ConfigKeys.DeviceLinkDeviceId, this.identity.deviceId)
+    this.set(ConfigKeys.DeviceLinkDeviceName, this.identity.deviceName)
+    this.set(ConfigKeys.DeviceLinkIdentityScope, this.identity.scope)
   }
 
   getDeviceLinkDeviceId(): string {
-    const deviceId = this.get<string>(ConfigKeys.DeviceLinkDeviceId)
-    return deviceId?.trim() || this.ensureDeviceLinkIdentityDefaults()
+    return this.ensureDeviceLinkIdentity().deviceId
   }
 
   setDeviceLinkDeviceId(value: string) {
-    const nextValue = value?.trim() || this.defaultDeviceIdentity()
-    this.set(ConfigKeys.DeviceLinkDeviceId, nextValue)
+    const identity = this.ensureDeviceLinkIdentity()
+    identity.deviceId = value?.trim() || identity.deviceId
+    this.deviceIdentity!.save(identity)
+    this.mirrorDeviceLinkIdentity()
   }
 
   getDeviceLinkDeviceName(): string {
-    const deviceName = this.get<string>(ConfigKeys.DeviceLinkDeviceName)
-    return deviceName?.trim() || this.ensureDeviceLinkIdentityDefaults()
+    return this.ensureDeviceLinkIdentity().deviceName
   }
 
   setDeviceLinkDeviceName(value: string) {
-    const nextValue = value?.trim()
-    this.set(ConfigKeys.DeviceLinkDeviceName, nextValue || this.getDeviceLinkDeviceId())
+    const identity = this.ensureDeviceLinkIdentity()
+    identity.deviceName = value?.trim() || identity.deviceId
+    this.deviceIdentity!.save(identity)
+    this.mirrorDeviceLinkIdentity()
   }
 
   getCustomUpdateServerUrl(): string {
