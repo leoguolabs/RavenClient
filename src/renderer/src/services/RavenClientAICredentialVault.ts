@@ -5,6 +5,10 @@ export function serviceProviderId(slot: RavenClientAIRoute['slot']): string {
   return `raven-service-${slot}`
 }
 
+function serviceEndpointType(route: RavenClientAIRoute): 'anthropic' | 'openai-response' {
+  return route.api_protocol === 'openai_responses' || route.provider === 'openai' ? 'openai-response' : 'anthropic'
+}
+
 export function serviceModelForRoute(route: RavenClientAIRoute, modelId = route.model): Model {
   const capabilities: ModelCapability[] = [{ type: 'text' }]
   if (route.capabilities.image_input) capabilities.push({ type: 'vision' })
@@ -16,8 +20,8 @@ export function serviceModelForRoute(route: RavenClientAIRoute, modelId = route.
     group: 'RavenAIService',
     owned_by: route.provider,
     capabilities,
-    endpoint_type: 'anthropic',
-    supported_endpoint_types: ['anthropic']
+    endpoint_type: serviceEndpointType(route),
+    supported_endpoint_types: [serviceEndpointType(route)]
   }
 }
 
@@ -28,7 +32,7 @@ export function publicServiceProviderForRoute(route: RavenClientAIRoute): Provid
   }
   return {
     id: serviceProviderId(route.slot),
-    type: 'anthropic',
+    type: serviceEndpointType(route),
     name: `${route.provider} (${route.slot})`,
     apiKey: '',
     apiHost: route.base_url,

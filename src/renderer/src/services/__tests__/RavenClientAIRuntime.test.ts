@@ -91,6 +91,33 @@ afterEach(() => {
 })
 
 describe('RavenClientAIRuntime', () => {
+  it('routes a synchronized OpenAI vision model through Responses without persisting its key', async () => {
+    const capabilities = snapshot('openai-rev', 'gpt-6.1-terra')
+    Object.assign(capabilities.routes[0], {
+      provider: 'openai',
+      api_protocol: 'openai_responses',
+      base_url: 'https://api.openai.com/v1',
+      small_fast_model: 'gpt-6.1-terra'
+    })
+    const client = {
+      getClientAICapabilities: vi.fn().mockResolvedValue(capabilities),
+      reportClientAIUsage: vi.fn().mockResolvedValue(undefined)
+    } as unknown as AIServiceAgentClient
+    const runtime = new RavenClientAIRuntime()
+    runtimes.push(runtime)
+    await runtime.start(client)
+
+    const state = store.getState()
+    expect(state.llm.providers[0].type).toBe('openai-response')
+    expect(state.llm.defaultModel.endpoint_type).toBe('openai-response')
+    expect(state.llm.defaultModel.capabilities).toContainEqual({ type: 'vision' })
+    expect(state.llm.quickModel.id).toBe('gpt-6.1-terra')
+    expect(JSON.stringify(state.llm)).not.toContain('server-only-secret')
+    expect(runtime.resolveProvider(state.llm.providers[0])).toMatchObject({
+      type: 'openai-response',
+      apiKey: 'server-only-secret'
+    })
+  })
   it('synchronizes server routing while keeping credentials out of Redux', async () => {
     const client = {
       getClientAICapabilities: vi.fn().mockResolvedValue(snapshot()),

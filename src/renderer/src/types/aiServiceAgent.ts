@@ -145,6 +145,7 @@ export interface RavenClientAIRouteCapabilities {
 export interface RavenClientAIRoute {
   slot: 'primary' | 'backup'
   provider: string
+  api_protocol?: 'anthropic_messages' | 'openai_responses'
   base_url: string
   api_key: string
   model: string
