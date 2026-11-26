@@ -2,13 +2,13 @@ import { loggerService } from '@logger'
 import { isMac } from '@renderer/config/constant'
 import { useNotification } from '@renderer/context/NotificationProvider'
 import { useTheme } from '@renderer/context/ThemeProvider'
-import i18n from '@renderer/i18n'
-import { useSettings } from '@renderer/hooks/useSettings'
 import { useFullscreen } from '@renderer/hooks/useFullscreen'
+import { useSettings } from '@renderer/hooks/useSettings'
+import i18n from '@renderer/i18n'
 import { IpcChannel } from '@shared/IpcChannel'
 import { Button } from 'antd'
 import type { WebviewTag } from 'electron'
-import { FC, useCallback, useEffect, useRef, useState } from 'react'
+import { FC, ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import styled from 'styled-components'
@@ -36,7 +36,7 @@ const logger = loggerService.withContext('ChatermWebviewHost')
  * §6.8 – theme / locale broadcast
  * §6.9 – raven:ui:navigate reverse IPC
  */
-const ChatermWebviewHost: FC = () => {
+const ChatermWebviewHost: FC<{ fallback?: ReactNode }> = ({ fallback }) => {
   const location = useLocation()
   const navigate = useNavigate()
   const { theme } = useTheme()
@@ -53,8 +53,7 @@ const ChatermWebviewHost: FC = () => {
   // Track whether the webview has ever been mounted so we can keep it alive
   const everMountedRef = useRef(false)
 
-  const [preloadUrl, setPreloadUrl] = useState<string | null>(null)
-  const [hasAssets, setHasAssets] = useState(false)
+  const [preloadUrl, setPreloadUrl] = useState<string | null | undefined>(undefined)
   const [loadState, setLoadState] = useState<LoadState>('idle')
 
   const isVisible = location.pathname === '/terminal'
@@ -66,10 +65,13 @@ const ChatermWebviewHost: FC = () => {
 
   // Query Chaterm status once on mount
   useEffect(() => {
-    window.api.chaterm.getStatus().then((status) => {
-      setHasAssets(status.hasAssets)
-      setPreloadUrl(status.preloadPath)
-    })
+    window.api.chaterm
+      .getStatus()
+      .then((status) => setPreloadUrl(status.isEnabled && status.preloadPath ? status.preloadPath : null))
+      .catch((error: Error) => {
+        logger.warn('Failed to check Chaterm availability', error)
+        setPreloadUrl(null)
+      })
   }, [])
 
   // §6.9: listen for raven:ui:navigate from Chaterm (via ipc-message OR from main process relay)
@@ -102,7 +104,6 @@ const ChatermWebviewHost: FC = () => {
   useEffect(() => {
     if (loadState !== 'loaded' || !webviewRef.current) return
     webviewRef.current.send(IpcChannel.Raven_UI_LocaleChanged, { locale: i18n.language })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [language, loadState])
 
   const resetNavigationState = useCallback(() => {
@@ -296,8 +297,9 @@ const ChatermWebviewHost: FC = () => {
     })
   }, [resetNavigationState])
 
-  // Don't render anything if Chaterm resources aren't available
-  if (!hasAssets || !preloadUrl) return null
+  // Wait for startup to report availability before choosing the terminal.
+  if (preloadUrl === undefined) return null
+  if (!preloadUrl) return isVisible ? fallback : null
 
   // §6.4: lazy — only mount the webview once the user first navigates to /terminal
   const shouldMount = everMountedRef.current

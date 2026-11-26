@@ -116,8 +116,9 @@ export const TerminalWorkbench: FC = () => {
 const WorkbenchContainer = styled.div`
   display: flex;
   flex-direction: column;
-  height: 100%;
-  background: #141517;
+  flex: 1;
+  min-height: 0;
+  background: var(--color-background);
 `
 
 const TabBar = styled.div`
@@ -125,8 +126,8 @@ const TabBar = styled.div`
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--color-background-soft);
+  border-bottom: 1px solid var(--color-border);
   overflow-x: auto;
 `
 
@@ -138,12 +139,12 @@ const Tab = styled.div<{ $active: boolean }>`
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--color-text-2, #bbb);
-  background: ${(p) => (p.$active ? 'rgba(255,255,255,0.08)' : 'transparent')};
+  color: var(--color-text);
+  background: ${(p) => (p.$active ? 'var(--color-active)' : 'transparent')};
   white-space: nowrap;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--color-hover);
   }
 `
 
@@ -196,6 +197,7 @@ const NewTabButton = styled.button`
 `
 
 const Stage = styled.div`
+  display: flex;
   position: relative;
   flex: 1;
   min-height: 0;

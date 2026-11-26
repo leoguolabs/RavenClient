@@ -92,12 +92,11 @@ DEBUG trap 兼容、保留用户原 PROMPT_COMMAND、防递归。
 | 重连 | 会话结束后 UI 提供「重连」（复用原配置）；自动重连队列列为 P1 |
 | 密码提示检测 | 多语言正则（password/密码/口令/…）识别后可提示保存身份（预留） |
 
-## 6. Chaterm 休眠策略
+## 6. Terminal 页签选择
 
-- `src/renderer/src/config/terminalFlags.ts`：`CHATERM_TERMINAL_ENABLED = false`；
-- `App.tsx` 按该 flag 决定是否挂载 `ChatermWebviewHost`；
-- `TerminalPage` 优先渲染原生终端，flag 关闭时回退旧 Chaterm 守卫逻辑；
-- main 进程 Chaterm 启动逻辑保留（无资源时本就 no-op，不 crash）。
+- macOS 默认使用 Chaterm，以保留 Terminal 内的 AI 能力。
+- `App.tsx` 在路由树之外挂载 `ChatermWebviewHost`，切换页签时保留终端会话。
+- macOS 上 Chaterm 不可用时，Terminal 页签打开原生终端。Windows 和 Linux 默认使用原生终端。
 
 ## 7. 依赖
 

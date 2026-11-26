@@ -1,107 +1,203 @@
-import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import fs from 'node:fs'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 
-const CHATERM_RENDERER = path.join(process.cwd(), 'resources/chaterm/index.html')
-const CHATERM_MAIN = path.join(process.cwd(), 'resources/chaterm/main/index.js')
-const HAS_CHATERM_ASSETS = fs.existsSync(CHATERM_RENDERER) && fs.existsSync(CHATERM_MAIN)
+import { _electron as electron, type ElectronApplication, expect, test } from '@playwright/test'
 
-let electronApp: ElectronApplication
-let mainWindow: Page
-let tmpUserData: string
+const model = 'terminal-e2e-model'
+const answer = 'echo raven-terminal-ai-ready'
+const user = { id: 'terminal-e2e', username: 'terminal-e2e' }
 
-// Both cases share one Electron launch (beforeAll) and must run sequentially:
-// the two assertions probe different stages of the same boot.
-test.describe.configure({ mode: 'serial' })
+async function startRavenService() {
+  const modelRequests: Array<{ model: string; messages: unknown }> = []
+  const server = createServer(async (request, response) => {
+    const { port } = server.address() as AddressInfo
+    const baseUrl = `http://127.0.0.1:${port}`
+    const now = Math.floor(Date.now() / 1000)
+    response.setHeader('Access-Control-Allow-Origin', '*')
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+    response.setHeader('Access-Control-Allow-Headers', '*')
 
-test.describe('/terminal — Chaterm embedded runtime', () => {
-  test.skip(!HAS_CHATERM_ASSETS, 'Chaterm resources missing; run `yarn build:chaterm` first')
+    if (request.method === 'OPTIONS') {
+      response.writeHead(204).end()
+      return
+    }
 
-  test.beforeAll(async () => {
-    // Isolated userData so this can coexist with `yarn dev` (which holds
-    // SingletonLock on the default ~/Library/Application Support/raven path).
-    tmpUserData = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-e2e-'))
-    electronApp = await electron.launch({
-      args: ['.', `--user-data-dir=${tmpUserData}`],
-      timeout: 60_000
-    })
-    mainWindow = await electronApp.firstWindow()
-    await mainWindow.waitForLoadState('domcontentloaded')
-  })
+    if (request.url === '/v1/messages' && request.method === 'POST') {
+      const chunks: Buffer[] = []
+      for await (const chunk of request) chunks.push(chunk)
+      modelRequests.push(JSON.parse(Buffer.concat(chunks).toString()))
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      const events = [
+        {
+          type: 'message_start',
+          message: {
+            id: 'terminal-e2e-reply',
+            type: 'message',
+            model,
+            role: 'assistant',
+            content: [],
+            usage: { input_tokens: 10, output_tokens: 0 }
+          }
+        },
+        { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: answer } },
+        { type: 'content_block_stop', index: 0 },
+        { type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } },
+        { type: 'message_stop' }
+      ]
+      response.end(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(''))
+      return
+    }
 
-  test.afterAll(async () => {
-    await electronApp?.close()
-    if (tmpUserData) fs.rmSync(tmpUserData, { recursive: true, force: true })
-  })
-
-  test('route /terminal mounts the chaterm webview element', async () => {
-    await mainWindow.evaluate(() => {
-      window.location.hash = '#/terminal'
-    })
-    const webviewLocator = mainWindow.locator('webview')
-    await expect(webviewLocator).toHaveCount(1, { timeout: 15_000 })
-    // The webview's src starts at about:blank; we don't assert load completion
-    // here — see the fixme test below for the full integration assertion.
-    const src = await webviewLocator.getAttribute('src')
-    expect(src).toBeTruthy()
-  })
-
-  test.fixme('webview mounts, finishes loading, and exposes raven:* IPC bridge', async () => {
-    await mainWindow.evaluate(() => {
-      window.location.hash = '#/terminal'
-    })
-
-    const webviewLocator = mainWindow.locator('webview')
-    await expect(webviewLocator).toHaveCount(1, { timeout: 15_000 })
-
-    // NOTE: when run via `electron.launch({ args: ['.'] })` without an active
-    // vite dev server, the embedded webview observed in this environment hangs
-    // at about:blank — the raven-chaterm:// protocol request never commits.
-    // Reproduces only in headless test launch; under `yarn dev` the same boot
-    // succeeds end-to-end (manual verification §7.1). Pending investigation;
-    // the load-completion assertion is marked fixme below.
-    await expect(mainWindow.getByText(/Loading Terminal/i)).toHaveCount(0, { timeout: 30_000 })
-    await expect(mainWindow.getByText(/Terminal crashed/i)).toHaveCount(0)
-
-    const bridge = await electronApp.evaluate(async ({ webContents }) => {
-      const all = webContents.getAllWebContents()
-      const wv = all.find((wc) => wc.getType() === 'webview')
-      if (!wv) return null
-      return wv.executeJavaScript(
-        `({
-          hasLLM: typeof window.ravenLLM === 'object' && window.ravenLLM !== null,
-          hasUI: typeof window.ravenUI === 'object' && window.ravenUI !== null,
-          hasOnSession: typeof window.ravenUI?.onSession === 'function',
-          hasNotifyHostWarn: typeof window.ravenUI?.notifyHostWarn === 'function'
-        })`
-      )
-    })
-
-    expect(bridge).not.toBeNull()
-    expect(bridge!.hasLLM).toBe(true)
-    expect(bridge!.hasUI).toBe(true)
-    expect(bridge!.hasOnSession).toBe(true)
-    expect(bridge!.hasNotifyHostWarn).toBe(true)
-  })
-
-  test.fixme('webview receives raven:ui:set-session and reports session ready', async () => {
-    const sessionReady = await electronApp.evaluate(async ({ webContents }) => {
-      const all = webContents.getAllWebContents()
-      const wv = all.find((wc) => wc.getType() === 'webview')
-      if (!wv) return null
-      const start = Date.now()
-      while (Date.now() - start < 10_000) {
-        const ready = await wv.executeJavaScript(
-          '(typeof window.__ravenSessionReady !== "undefined") ? !!window.__ravenSessionReady : null'
-        )
-        if (ready === true) return { ready: true, waitedMs: Date.now() - start }
-        await new Promise((r) => setTimeout(r, 250))
+    const payloads: Record<string, unknown> = {
+      '/api/v1/users/auth/login': { token: 'terminal-e2e-token', expires_at: now + 3600, user },
+      '/api/v1/users/auth/me': { data: user },
+      '/api/v1/users/chat-sessions': { data: [] },
+      '/api/v1/client-ai/usage': { data: { invocation_id: 'terminal-e2e-reply' } },
+      '/api/v1/client-ai/capabilities': {
+        data: {
+          revision: 'terminal-e2e',
+          issued_at: now,
+          expires_at: now + 3600,
+          refresh_after_seconds: 60,
+          routes: [
+            {
+              slot: 'primary',
+              provider: 'anthropic',
+              api_protocol: 'anthropic_messages',
+              base_url: baseUrl,
+              api_key: 'terminal-e2e-model-key',
+              model,
+              capabilities: {
+                image_input: false,
+                document_input: false,
+                tool_use: true,
+                partial_streaming: true,
+                thinking_budget: false
+              }
+            }
+          ]
+        }
       }
-      return { ready: false, waitedMs: Date.now() - start }
-    })
-
-    expect(sessionReady).not.toBeNull()
-    expect(sessionReady!.ready).toBe(true)
+    }
+    const payload = payloads[request.url ?? '']
+    response.writeHead(payload ? 200 : 404, { 'Content-Type': 'application/json' })
+    response.end(JSON.stringify(payload ?? {}))
   })
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  return { server, port: (server.address() as AddressInfo).port, modelRequests }
+}
+
+// Build with `yarn build` first. Set RAVEN_TERMINAL_E2E_EXECUTABLE to Raven.app/Contents/MacOS/Raven
+// to exercise the packaged runtime on macOS with the same assertions.
+test('macOS Terminal fills the workspace and supports a local shell and streamed AI replies', async () => {
+  test.skip(process.platform !== 'darwin', 'The embedded AI terminal is enabled on macOS')
+  test.setTimeout(90_000)
+  const executablePath = process.env.RAVEN_TERMINAL_E2E_EXECUTABLE
+  const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'raven-terminal-e2e-'))
+  const { server, port, modelRequests } = await startRavenService()
+  let app: ElectronApplication | undefined
+
+  try {
+    app = await electron.launch({
+      executablePath,
+      args: [...(executablePath ? [] : ['.']), `--user-data-dir=${profile}`],
+      env: {
+        ...process.env,
+        RAVEN_AI_SERVICE_HOST: '127.0.0.1',
+        RAVEN_AI_SERVICE_PORT: String(port)
+      }
+    })
+    const raven = await app.firstWindow()
+    await raven.locator('input[autocomplete="username"]').fill(user.username)
+    await raven.locator('input[autocomplete="current-password"]').fill('terminal-e2e-password')
+    await raven.locator('input[autocomplete="current-password"]').press('Enter')
+
+    const terminalIcon = raven.locator('#app-sidebar .lucide-square-terminal')
+    const guestPromise = app.waitForEvent('window')
+    await terminalIcon.click()
+    await expect(raven).toHaveURL(/#\/terminal$/)
+    const guest = await guestPromise
+    await expect(guest).toHaveURL(/^raven-chaterm:\/\/app\/index\.html/)
+
+    const webview = raven.locator('webview')
+    const input = guest.getByTestId('ai-message-input')
+    const sendButton = guest.getByTestId('send-message-btn')
+    await expect(input).toBeVisible()
+    await expect(guest.getByText(model, { exact: true })).toBeVisible()
+
+    for (const width of [1440, 1080]) {
+      await app.evaluate(
+        ({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setContentSize(width, 760),
+        width
+      )
+      await expect
+        .poll(() =>
+          webview.evaluate((element) => {
+            const rect = element.getBoundingClientRect()
+            const sidebar = document.querySelector('#app-sidebar')!.getBoundingClientRect()
+            return {
+              startsAfterSidebar: Math.abs(rect.left - sidebar.right) <= 1,
+              reachesRightEdge: Math.abs(rect.right - innerWidth) <= 1,
+              fillsHeight: Math.abs(rect.bottom - innerHeight) <= 1,
+              windowWidth: innerWidth
+            }
+          })
+        )
+        .toEqual({ startsAfterSidebar: true, reachesRightEdge: true, fillsHeight: true, windowWidth: width })
+      await expect(input).toBeInViewport({ ratio: 1 })
+      await expect(sendButton).toBeInViewport({ ratio: 1 })
+    }
+
+    const localShell = guest.getByText(/Shell \(Default\)/)
+    if (!(await localShell.isVisible())) {
+      await guest
+        .locator('.title-with-icon')
+        .getByText(/本地连接|本地主機|Localhost/)
+        .click()
+    }
+    await localShell.dblclick()
+    const terminal = guest.locator('.xterm')
+    await expect(terminal).toBeVisible()
+    await terminal.click()
+    const shellOutput = path.join(profile, 'local-shell-output')
+    await guest.keyboard.type(`uname -s | tee '${shellOutput}'`)
+    await guest.keyboard.press('Enter')
+    await expect
+      .poll(() => (fs.existsSync(shellOutput) ? fs.readFileSync(shellOutput, 'utf8').trim() : ''))
+      .toBe('Darwin')
+
+    await guest.getByTestId('ai-mode-select').click()
+    await guest.getByText('Command', { exact: true }).click()
+    await input.fill('Suggest a macOS command that prints a test message.')
+    await expect(sendButton).toBeInViewport({ ratio: 1 })
+    await sendButton.click()
+    const reply = guest.getByTestId('ai-message').getByText(answer, { exact: true }).filter({ visible: true }).first()
+    await expect(reply).toBeVisible()
+    expect(modelRequests).toContainEqual(
+      expect.objectContaining({
+        model,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: expect.stringContaining('Suggest a macOS command') })
+        ])
+      })
+    )
+
+    await raven.locator('#app-sidebar .lucide-message-square').click()
+    await expect(webview).toBeHidden()
+    await terminalIcon.click()
+    await expect(webview).toBeVisible()
+    await expect(terminal).toBeVisible()
+    await expect(reply).toBeVisible()
+    await raven.screenshot({ path: test.info().outputPath('macos-terminal-ai.png') })
+  } finally {
+    await app?.close()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+    fs.rmSync(profile, { recursive: true, force: true })
+  }
 })

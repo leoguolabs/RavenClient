@@ -1,8 +1,7 @@
-import { act, cleanup, render, waitFor } from '@testing-library/react'
+import { IpcChannel } from '@shared/IpcChannel'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-import { IpcChannel } from '@shared/IpcChannel'
 
 import ChatermWebviewHost from '../ChatermWebviewHost'
 
@@ -55,7 +54,7 @@ const logToMainMock = vi.fn()
 function renderHost() {
   return render(
     <MemoryRouter initialEntries={['/terminal']}>
-      <ChatermWebviewHost />
+      <ChatermWebviewHost fallback={<div>Native terminal</div>} />
     </MemoryRouter>
   )
 }
@@ -123,6 +122,26 @@ describe('ChatermWebviewHost', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+  })
+
+  it('shows the native terminal when Chaterm resources are unavailable', async () => {
+    vi.mocked(window.api.chaterm.getStatus).mockResolvedValueOnce({
+      isEnabled: false,
+      hasAssets: false,
+      preloadPath: ''
+    })
+    renderHost()
+
+    expect(await screen.findByText('Native terminal')).toBeVisible()
+    expect(document.querySelector('webview')).toBeNull()
+  })
+
+  it('shows the native terminal when checking Chaterm availability fails', async () => {
+    vi.mocked(window.api.chaterm.getStatus).mockRejectedValueOnce(new Error('Status unavailable'))
+    renderHost()
+
+    expect(await screen.findByText('Native terminal')).toBeVisible()
+    expect(document.querySelector('webview')).toBeNull()
   })
 
   it('creates the webview at about:blank, attaches on dom-ready, then navigates to Chaterm', async () => {

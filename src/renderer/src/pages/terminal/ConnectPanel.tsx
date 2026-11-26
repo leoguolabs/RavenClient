@@ -134,8 +134,11 @@ const Container = styled.div`
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100%;
+  justify-content: safe center;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
   gap: 14px;
   color: var(--color-text);
 `
@@ -155,7 +158,7 @@ const ModeSwitch = styled.div`
   gap: 4px;
   padding: 3px;
   border-radius: 8px;
-  background: var(--color-background-2, #1b1d21);
+  background: var(--color-background-soft);
 `
 
 const ModeButton = styled.button<{ $active: boolean }>`
@@ -164,18 +167,18 @@ const ModeButton = styled.button<{ $active: boolean }>`
   border: none;
   cursor: pointer;
   font-size: 13px;
-  background: ${(p) => (p.$active ? 'var(--color-background-3, #2a2d33)' : 'transparent')};
-  color: ${(p) => (p.$active ? 'var(--color-text)' : 'var(--color-text-3)')};
+  background: ${(p) => (p.$active ? 'var(--color-background-mute)' : 'transparent')};
+  color: ${(p) => (p.$active ? 'var(--color-text)' : 'var(--color-text-2)')};
 `
 
 const Form = styled.form`
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 380px;
+  width: min(100%, 380px);
   padding: 16px;
   border-radius: 10px;
-  background: var(--color-background-2, #1b1d21);
+  background: var(--color-background-soft);
 `
 
 const Row = styled.div`
@@ -188,6 +191,7 @@ const Field = styled.div<{ $narrow?: boolean }>`
   flex-direction: column;
   gap: 4px;
   flex: ${(p) => (p.$narrow ? '0 0 90px' : '1')};
+  min-width: 0;
 
   input,
   textarea,
@@ -214,13 +218,13 @@ const Field = styled.div<{ $narrow?: boolean }>`
 
 const Label = styled.label`
   font-size: 12px;
-  color: var(--color-text-3);
+  color: var(--color-text-2);
 `
 
 const Description = styled.p`
   margin: 0;
   font-size: 13px;
-  color: var(--color-text-3);
+  color: var(--color-text-2);
 `
 
 const ErrorText = styled.p`

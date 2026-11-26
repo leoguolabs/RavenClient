@@ -14,6 +14,7 @@ import ChatermWebviewHost from './components/app/ChatermWebviewHost'
 import Sidebar from './components/app/Sidebar'
 import RavenAccountGate from './components/auth/RavenAccountGate'
 import TopViewContainer from './components/TopView'
+import { CHATERM_TERMINAL_ENABLED } from './config/terminalFlags'
 import AntdProvider from './context/AntdProvider'
 import { CodeStyleProvider } from './context/CodeStyleProvider'
 import { NotificationProvider } from './context/NotificationProvider'
@@ -21,7 +22,6 @@ import { RavenAccountProvider } from './context/RavenAccountContext'
 import StyleSheetManager from './context/StyleSheetManager'
 import { ThemeProvider } from './context/ThemeProvider'
 import NavigationHandler from './handler/NavigationHandler'
-import { CHATERM_TERMINAL_ENABLED } from './config/terminalFlags'
 import AgentsPage from './pages/agents/AgentsPage'
 import FilesPage from './pages/files/FilesPage'
 import HomePage from './pages/home/HomePage'
@@ -77,13 +77,11 @@ function App(): React.ReactElement {
                               <Route path="/knowledge" element={<KnowledgePage />} />
                               <Route path="/packager/*" element={<PackagerPage />} />
                               <Route path="/settings/*" element={<SettingsPage />} />
-                              {/* §6.1/6.2: Terminal tab — ChatermWebviewHost renders the webview */}
-                              <Route path="/terminal" element={<TerminalPage />} />
+                              <Route path="/terminal" element={CHATERM_TERMINAL_ENABLED ? null : <TerminalPage />} />
                             </Routes>
                           </React.Suspense>
-                          {/* §6.4: Persistent webview host outside Routes keeps SSH sessions alive.
-                              Dormant while the native terminal owns the /terminal tab. */}
-                          {CHATERM_TERMINAL_ENABLED && <ChatermWebviewHost />}
+                          {/* Keep the webview and its sessions alive when navigating away. */}
+                          {CHATERM_TERMINAL_ENABLED && <ChatermWebviewHost fallback={<TerminalPage />} />}
                         </HashRouter>
                       </TopViewContainer>
                     </RavenAccountGate>

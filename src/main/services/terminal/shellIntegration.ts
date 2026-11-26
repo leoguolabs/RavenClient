@@ -292,7 +292,7 @@ __raven_cwd_report
  * Returns null when no injection is available (Windows shells, unknown shells).
  */
 export function detectIntegrationShell(shellPath: string): SupportedIntegrationShell | null {
-  const base = path
+  const base = path.win32
     .basename(shellPath)
     .toLowerCase()
     .replace(/\.exe$/, '')
